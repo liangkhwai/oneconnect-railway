@@ -9,15 +9,16 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { usePlaces } from "../api/placesApi";
-import { useNamphraeMarkers } from "../../marker/api/markerApi";
+import { useNamphraeMarkers, useNamphraeCategories } from "../../marker/api/markerApi";
 import L from "leaflet";
-import { Modal } from "antd";
+import { Modal, Image, Descriptions, Tag, Select, Button, Card } from "antd";
 
 const NamphraePage = () => {
   const [mapZoom, setMapZoom] = useState(11);
   const [position, setPosition] = useState([15.87, 100.9925]);
-  const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState(null);
+
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   const {
     data: placeData,
@@ -30,40 +31,64 @@ const NamphraePage = () => {
     isLoading: isLoadingMarkers,
     isError: isErrorMarkers,
     error: errorMarkers,
-  } = useNamphraeMarkers();
+  } = useNamphraeMarkers(selectedCategory);
 
-  const MapUpdater = ({ placeData, defaultPosition, defaultZoom }) => {
+  const {
+    data: categoriesData,
+    isLoading: isLoadingCategories,
+    isError: isErrorCategories,
+    error: errorCategories,
+  } = useNamphraeCategories();
+
+  const MapUpdater = ({
+    placeData,
+    defaultPosition,
+    defaultZoom,
+    selectedMarker,
+  }) => {
     const map = useMap();
 
     useEffect(() => {
-      if (placeData && placeData.place && placeData.place.features) {
-        const geoJsonLayer = L.geoJson(placeData.place.features);
-        map.fitBounds(geoJsonLayer.getBounds());
-      } else if (defaultPosition) {
-        map.setView(defaultPosition, defaultZoom);
+      const zoomOptions = { duration: 0.5 };
+      if (selectedMarker) {
+        const { lat, lng } = selectedMarker.location;
+        if (
+          typeof lat === "number" &&
+          typeof lng === "number" &&
+          !isNaN(lat) &&
+          !isNaN(lng)
+        ) {
+          map.flyTo([lat, lng], 15, zoomOptions);
+        }
+      } else {
+        if (placeData && placeData.place && placeData.place.features) {
+          const geoJsonLayer = L.geoJson(placeData.place.features);
+          map.flyToBounds(geoJsonLayer.getBounds(), zoomOptions);
+        } else if (defaultPosition) {
+          map.flyTo(defaultPosition, defaultZoom, zoomOptions);
+        }
       }
-    }, [map, placeData, defaultPosition, defaultZoom]);
+    }, [map, placeData, defaultPosition, defaultZoom, selectedMarker]);
 
     return null;
   };
 
   const showModal = (marker) => {
     setSelectedMarker(marker);
-    setIsModalVisible(true);
   };
 
   const handleCancel = () => {
-    setIsModalVisible(false);
     setSelectedMarker(null);
   };
 
-  if (isLoadingPlace || isLoadingMarkers) return <div>Loading...</div>;
+  if (isLoadingPlace || isLoadingMarkers || isLoadingCategories) return <div>Loading...</div>;
   if (isErrorPlace) return <div>Error loading place: {errorPlace.message}</div>;
   if (isErrorMarkers) return <div>Error loading markers: {errorMarkers.message}</div>;
+  if (isErrorCategories) return <div>Error loading categories: {errorCategories.message}</div>;
 
   return (
-    <div className="flex h-full">
-      <div className="w-[70%] h-full">
+    <div className="flex flex-col lg:flex-row h-full">
+      <div className="w-full lg:w-[70%] h-full">
         <MapContainer
           center={position}
           zoom={mapZoom}
@@ -94,7 +119,7 @@ const NamphraePage = () => {
               if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
                 return (
                   <Marker
-                    key={marker.id}
+                    key={marker._id}
                     position={[lat, lng]}
                     icon={L.icon({ iconUrl: marker.icon, iconSize: [25, 25] })}
                     eventHandlers={{
@@ -107,35 +132,194 @@ const NamphraePage = () => {
                 return null;
               }
             })}
-          <MapUpdater placeData={placeData} defaultPosition={position} defaultZoom={mapZoom} />
+          <MapUpdater
+            placeData={placeData}
+            defaultPosition={position}
+            defaultZoom={mapZoom}
+            selectedMarker={selectedMarker}
+          />
         </MapContainer>
       </div>
-      <div className="w-[30%] bg-white p-4">
-        <div className="bg-gray-100 p-4 rounded-lg h-full">
-          <h2 className="text-xl font-bold mb-4">Card Space</h2>
-          <p>Content for the card space.</p>
-          <h3>Markers:</h3>
-          <ul>
-            {markersData &&
-              markersData.map((marker) => (
-                <li key={marker._id}>{marker.fullName}</li>
-              ))}
-          </ul>
+      <div className="w-full lg:w-[30%] bg-white p-4 flex flex-col h-full">
+        <h2 className="text-2xl font-bold mb-4 text-center">นามแพร่</h2>
+        <Card title="กรองหมุด" style={{ marginBottom: "16px" }}>
+          <Select
+            placeholder="เลือกหมวดหมู่"
+            allowClear
+            style={{ width: "100%" }}
+            onChange={(value) => setSelectedCategory(value)}
+            options={categoriesData?.map((category) => ({
+              label: category,
+              value: category,
+            }))}
+            value={selectedCategory}
+          />
+          <Button
+            type="primary"
+            onClick={() => setSelectedCategory(null)}
+            style={{ marginTop: "8px", width: "100%" }}
+          >
+            รีเซ็ตตัวกรอง
+          </Button>
+        </Card>
+        <div style={{ flexGrow: 1, overflowY: 'auto' }}>
+          <Card
+            title={
+              selectedMarker ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <img
+                    src={selectedMarker.icon}
+                    alt="category icon"
+                    style={{
+                      width: "24px",
+                      height: "24px",
+                      marginRight: "8px",
+                    }}
+                  />
+                  {selectedMarker.category}
+                </div>
+              ) : (
+                "รายละเอียดหมุด"
+              )
+            }
+          >
+            {selectedMarker ? (
+              <>
+                <Descriptions bordered column={1} size="small">
+                  <Descriptions.Item label="ปัญหา">
+                    {selectedMarker.problems.join(", ")}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="รายละเอียด">
+                    {selectedMarker.detail}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="สถานะ">
+                    <Tag
+                      color={
+                        selectedMarker.status === "ดำเนินการเสร็จสิ้น"
+                          ? "success"
+                          : "default"
+                      }
+                    >
+                      {selectedMarker.status}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="อัปเดตล่าสุด">
+                    {new Date(selectedMarker.updatedAt).toLocaleString(
+                      "th-TH-u-ca-gregory",
+                      {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      }
+                    )}
+                  </Descriptions.Item>
+                </Descriptions>
+                <div style={{ marginTop: "16px" }}>
+                  <h4 style={{ marginBottom: "8px" }}>รูปภาพ:</h4>
+                  <Image.PreviewGroup>
+                    <div
+                      style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
+                    >
+                      {selectedMarker.images.map((image, index) => (
+                        <Image
+                        key={index}
+                        src={image}
+                        style={{ maxWidth: "100px", height: "auto", objectFit: "cover" }}
+                      />
+                      ))}
+                    </div>
+                  </Image.PreviewGroup>
+                </div>
+              </>
+            ) : (
+              <p>คลิกหมุดบนแผนที่เพื่อดูรายละเอียดที่นี่</p>
+            )}
+          </Card>
         </div>
       </div>
-      {selectedMarker && (
+      {/* {selectedMarker && (
         <Modal
-          title={selectedMarker.fullName}
+          title={
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <img
+                src={selectedMarker.icon}
+                alt="category icon"
+                style={{ width: "24px", height: "24px", marginRight: "8px" }}
+              />
+              {selectedMarker.category}
+            </div>
+          }
           open={isModalVisible}
           onCancel={handleCancel}
           footer={null}
+          centered
         >
-          <p>ID: {selectedMarker._id}</p>
-          <p>Full Name: {selectedMarker.fullName}</p>
-          <p>Citizen ID: {selectedMarker.citizenId}</p>
-          {/* Add more details as needed */}
+          <Descriptions bordered column={1} size="small">
+            <Descriptions.Item label="ปัญหา">
+              {selectedMarker.problems.join(", ")}
+            </Descriptions.Item>
+            <Descriptions.Item label="รายละเอียด">
+              {selectedMarker.detail}
+            </Descriptions.Item>
+            <Descriptions.Item label="สถานะ">
+              <Tag
+                color={
+                  selectedMarker.status === "ดำเนินการเสร็จสิ้น"
+                    ? "success"
+                    : "default"
+                }
+              >
+                {selectedMarker.status}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="อัปเดตล่าสุด">
+              {new Date(selectedMarker.updatedAt).toLocaleString(
+                "th-TH-u-ca-gregory",
+                {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }
+              )}
+            </Descriptions.Item>
+          </Descriptions>
+          <div style={{ marginTop: "16px" }}>
+            <h4 style={{ marginBottom: "8px" }}>รูปภาพ:</h4>
+            <Image.PreviewGroup>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {selectedMarker.images.map((image, index) => (
+                  <Image
+                    key={index}
+                    width={100}
+                    height={100}
+                    src={image}
+                    style={{ objectFit: "cover" }}
+                  />
+                ))}
+              </div>
+            </Image.PreviewGroup>
+          </div>
         </Modal>
       )}
+      */}
     </div>
   );
 };
